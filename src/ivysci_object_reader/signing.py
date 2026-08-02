@@ -8,10 +8,10 @@ from urllib.parse import quote, urljoin
 
 
 def auth_b(auth_key: str, path: str, expires_at: dt.datetime) -> str:
-    """Create the Type-B signed path used by the ivySCI CDN.
+    """Create a Type-B signed CDN path.
 
     ``expires_at`` must already be expressed in the timezone expected by the
-    CDN. The reader defaults to ``Asia/Shanghai`` to preserve unob's behavior.
+    CDN. The reader defaults to ``Asia/Shanghai``.
     """
 
     normalized_path = urljoin("/", quote(path))

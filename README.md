@@ -1,25 +1,25 @@
 # ivysci-object-reader
 
-Framework-independent Aliyun OSS object reader extracted from `unob`. It keeps
-the existing ivySCI runtime behavior:
+A framework-independent Aliyun OSS object reader with configurable CDN routing
+and OSS fallback.
 
-- use the internal OSS endpoint when the process runs inside the Aliyun VPC;
-- otherwise use the internal CDN proxy when configured, or the public CDN;
+- use the internal OSS endpoint for workloads running inside an Aliyun VPC;
+- otherwise use a private-network CDN proxy when configured, or a public CDN;
 - fall back from CDN network/HTTP errors to the public OSS endpoint;
 - treat CDN `404` as authoritative and do not fall back;
 - write file downloads atomically so an interrupted response cannot leave a
   partial destination file.
 
-The package does **not** read Django settings, YAML files, or environment
-variables. The host application loads its own configuration and injects it.
+The package does not read framework settings, YAML files, or environment
+variables. The host application loads its configuration and injects it.
 
 ## Install
 
-From a private GitHub repository and a release tag:
+Install a tagged release directly from the public GitHub repository:
 
 ```bash
 python -m pip install \
-  "ivysci-object-reader @ git+ssh://git@github.com/IvyScience/ivysci-object-reader.git@v0.1.0"
+  "ivysci-object-reader @ git+https://github.com/IvyScience/ivysci-object-reader.git@v0.1.1"
 ```
 
 Poetry:
@@ -27,8 +27,8 @@ Poetry:
 ```toml
 [tool.poetry.dependencies]
 ivysci-object-reader = {
-  git = "ssh://git@github.com/IvyScience/ivysci-object-reader.git",
-  tag = "v0.1.0"
+  git = "https://github.com/IvyScience/ivysci-object-reader.git",
+  tag = "v0.1.1"
 }
 ```
 
@@ -43,41 +43,45 @@ from ivysci_object_reader import (
 
 reader = ObjectReader(
     credentials=AliyunCredentials(
-        access_key_id=app_settings.aliyun_access_key,
-        access_key_secret=app_settings.aliyun_access_secret,
+        access_key_id=application_config.oss_access_key_id,
+        access_key_secret=application_config.oss_access_key_secret,
     ),
     storages={
-        "default": StorageConfig(
-            bucket_name="ivypri",
+        "documents": StorageConfig(
+            bucket_name="example-documents-bucket",
             region="cn-shanghai",
-            cdn_base_url="https://private.cdn.ivysci.com/",
-            cdn_auth_key="...",
-            cdn_url_ttl=86400,
+            cdn_base_url="https://cdn.example.com/",
+            cdn_auth_key=application_config.cdn_auth_key,
+            cdn_url_ttl=3600,
         ),
-        "asset": StorageConfig(
-            bucket_name="ivyasset",
+        "assets": StorageConfig(
+            bucket_name="example-assets-bucket",
             region="cn-shanghai",
-            cdn_base_url="https://asset.cdn.ivysci.com/",
+            cdn_base_url="https://assets.example.com/",
         ),
     },
-    cdn_proxy_base_url=app_settings.oss_cdn_proxy_base_url,
-    use_internal_endpoint=app_settings.oss_use_internal_endpoint,
-    prefer_cdn=not app_settings.environment.is_development,
+    cdn_proxy_base_url="http://cache.internal.example/",
+    use_internal_endpoint=application_config.use_internal_oss,
+    prefer_cdn=application_config.prefer_cdn,
 )
 
-content = reader.read_object("document/example.pdf")
-reader.read_object_to_file("document/example.pdf", "/tmp/example.pdf")
+content = reader.read_object("fixtures/example-document.pdf", "documents")
+reader.read_object_to_file(
+    "fixtures/example-document.pdf",
+    "/tmp/example-document.pdf",
+    "documents",
+)
 ```
 
 New callers may use the equivalent names `read_bytes()` and `download_file()`.
 
-## Host configuration
+## Configuration
 
-Configuration remains owned by the host project. For example, unob may keep
-the same `settings.yaml` shape and convert each parsed storage entry into a
-`StorageConfig` before creating `ObjectReader`.
+Configuration remains owned by the host project. Convert the values loaded by
+your preferred settings system into `AliyunCredentials` and `StorageConfig`,
+then pass them to `ObjectReader`.
 
-No credentials or CDN signing keys should be committed to this repository.
+Never commit credentials or CDN signing keys to an application repository.
 
 ## Development
 
@@ -86,3 +90,7 @@ python -m pip install -e ".[test]"
 python -m pytest
 python -m build
 ```
+
+## License
+
+Licensed under the Apache License, Version 2.0. See [LICENSE](LICENSE).

@@ -10,47 +10,54 @@ from ivysci_object_reader import AliyunCredentials, ObjectReader, StorageConfig
 @pytest.fixture
 def storage():
     return StorageConfig(
-        bucket_name="ivypri-testing",
-        cdn_base_url="https://private-testing.cdn.ivysci.com/",
-        cdn_auth_key="cdn-secret",
+        bucket_name="example-documents-bucket",
+        cdn_base_url="https://cdn.example.com/",
+        cdn_auth_key="test-cdn-signing-key",
         cdn_url_ttl=3600,
     )
 
 
 def make_reader(storage, **kwargs):
     return ObjectReader(
-        credentials=AliyunCredentials("access-key", "access-secret"),
+        credentials=AliyunCredentials("test-access-key", "test-access-secret"),
         storages={"default": storage},
         **kwargs,
     )
 
 
 def test_cdn_download_url_prefers_internal_proxy(storage):
-    reader = make_reader(storage, cdn_proxy_base_url="http://cdn-proxy/")
+    reader = make_reader(
+        storage, cdn_proxy_base_url="http://cache.internal.example/"
+    )
 
-    url = reader.cdn_download_url("document/a.pdf")
+    url = reader.cdn_download_url("fixtures/example-document.pdf")
 
-    assert url.startswith("http://cdn-proxy/default/")
-    assert url.endswith("/document/a.pdf")
+    assert url.startswith("http://cache.internal.example/default/")
+    assert url.endswith("/fixtures/example-document.pdf")
     reader.close()
 
 
 def test_cdn_download_url_uses_public_cdn_without_proxy(storage):
     reader = make_reader(storage)
 
-    url = reader.cdn_download_url("document/a.pdf")
+    url = reader.cdn_download_url("fixtures/example-document.pdf")
 
-    assert url.startswith("https://private-testing.cdn.ivysci.com/")
-    assert url.endswith("/document/a.pdf")
+    assert url.startswith("https://cdn.example.com/")
+    assert url.endswith("/fixtures/example-document.pdf")
     reader.close()
 
 
 def test_cdn_url_preserves_query(storage):
     reader = make_reader(storage)
 
-    url = reader.cdn_url("document/a.pdf", query={"download": "1", "name": "a b"})
+    url = reader.cdn_url(
+        "fixtures/example-document.pdf",
+        query={"download": "1", "name": "example file"},
+    )
 
-    assert url.endswith("/document/a.pdf?download=1&name=a+b")
+    assert url.endswith(
+        "/fixtures/example-document.pdf?download=1&name=example+file"
+    )
     reader.close()
 
 
@@ -66,7 +73,7 @@ def test_read_object_uses_internal_oss_when_enabled(storage):
         bucket_factory=bucket_factory,
     )
 
-    assert reader.read_object("document/a.pdf") == b"internal-oss"
+    assert reader.read_object("fixtures/example-document.pdf") == b"internal-oss"
     bucket_factory.assert_called_once_with(storage, True)
     http_client.get.assert_not_called()
 
@@ -83,7 +90,7 @@ def test_read_object_uses_public_oss_when_cdn_is_not_preferred(storage):
         bucket_factory=bucket_factory,
     )
 
-    assert reader.read_object("document/a.pdf") == b"public-oss"
+    assert reader.read_object("fixtures/example-document.pdf") == b"public-oss"
     bucket_factory.assert_called_once_with(storage, False)
     http_client.get.assert_not_called()
 
@@ -100,12 +107,12 @@ def test_read_object_uses_cdn(storage):
         bucket_factory=bucket_factory,
     )
 
-    assert reader.read_object("document/a.pdf") == b"cdn"
+    assert reader.read_object("fixtures/example-document.pdf") == b"cdn"
     bucket_factory.assert_not_called()
 
 
 def test_read_object_falls_back_to_public_oss_on_cdn_500(storage):
-    request = httpx.Request("GET", "https://cdn.example/a.pdf")
+    request = httpx.Request("GET", "https://cdn.example.com/example-document.pdf")
     response = httpx.Response(500, request=request)
     http_client = MagicMock()
     http_client.get.return_value = response
@@ -114,17 +121,17 @@ def test_read_object_falls_back_to_public_oss_on_cdn_500(storage):
     bucket_factory = MagicMock(return_value=bucket)
     reader = make_reader(
         storage,
-        cdn_proxy_base_url="http://cdn-proxy/",
+        cdn_proxy_base_url="http://cache.internal.example/",
         http_client=http_client,
         bucket_factory=bucket_factory,
     )
 
-    assert reader.read_object("document/a.pdf") == b"oss"
+    assert reader.read_object("fixtures/example-document.pdf") == b"oss"
     bucket_factory.assert_called_once_with(storage, False)
 
 
 def test_read_object_does_not_fallback_on_cdn_404(storage):
-    request = httpx.Request("GET", "https://cdn.example/a.pdf")
+    request = httpx.Request("GET", "https://cdn.example.com/example-document.pdf")
     response = httpx.Response(404, request=request)
     http_client = MagicMock()
     http_client.get.return_value = response
@@ -136,13 +143,13 @@ def test_read_object_does_not_fallback_on_cdn_404(storage):
     )
 
     with pytest.raises(httpx.HTTPStatusError):
-        reader.read_object("document/a.pdf")
+        reader.read_object("fixtures/example-document.pdf")
 
     bucket_factory.assert_not_called()
 
 
 def test_read_object_falls_back_on_network_error(storage):
-    request = httpx.Request("GET", "https://cdn.example/a.pdf")
+    request = httpx.Request("GET", "https://cdn.example.com/example-document.pdf")
     http_client = MagicMock()
     http_client.get.side_effect = httpx.ConnectError("failed", request=request)
     bucket = MagicMock()
@@ -154,11 +161,11 @@ def test_read_object_falls_back_on_network_error(storage):
         bucket_factory=bucket_factory,
     )
 
-    assert reader.read_object("document/a.pdf") == b"oss"
+    assert reader.read_object("fixtures/example-document.pdf") == b"oss"
 
 
 def test_read_object_to_file_is_atomic_and_falls_back(storage, tmp_path):
-    request = httpx.Request("GET", "https://cdn.example/a.pdf")
+    request = httpx.Request("GET", "https://cdn.example.com/example-document.pdf")
     response = MagicMock()
 
     def interrupted_stream():
@@ -182,11 +189,14 @@ def test_read_object_to_file_is_atomic_and_falls_back(storage, tmp_path):
         http_client=http_client,
         bucket_factory=MagicMock(return_value=bucket),
     )
-    destination = tmp_path / "a.pdf"
+    destination = tmp_path / "example-document.pdf"
 
-    assert reader.read_object_to_file("document/a.pdf", destination) == destination
+    assert (
+        reader.read_object_to_file("fixtures/example-document.pdf", destination)
+        == destination
+    )
     assert destination.read_bytes() == b"complete-from-oss"
-    assert not list(tmp_path.glob(".a.pdf.*.download"))
+    assert not list(tmp_path.glob(".example-document.pdf.*.download"))
 
 
 def test_unknown_storage_has_clear_error(storage):
