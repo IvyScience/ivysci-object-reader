@@ -26,10 +26,7 @@ Poetry:
 
 ```toml
 [tool.poetry.dependencies]
-ivysci-object-reader = {
-  git = "https://github.com/IvyScience/ivysci-object-reader.git",
-  tag = "v0.1.1"
-}
+ivysci-object-reader = { git = "https://github.com/IvyScience/ivysci-object-reader.git", tag = "v0.1.1" }
 ```
 
 ## Usage
@@ -71,6 +68,7 @@ reader.read_object_to_file(
     "/tmp/example-document.pdf",
     "documents",
 )
+reader.close()
 ```
 
 New callers may use the equivalent names `read_bytes()` and `download_file()`.
@@ -87,6 +85,7 @@ Never commit credentials or CDN signing keys to an application repository.
 
 ```bash
 python -m pip install -e ".[test]"
+python -m pip install build
 python -m pytest
 python -m build
 ```
