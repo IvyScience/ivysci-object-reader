@@ -23,7 +23,7 @@ BucketFactory = Callable[[StorageConfig, bool], Any]
 
 
 class ObjectReader:
-    """Read objects using unob's existing runtime routing policy.
+    """Read objects using a configurable runtime routing policy.
 
     Routing is intentionally simple:
 
@@ -155,7 +155,7 @@ class ObjectReader:
         if not key:
             return ""
         storage = self.get_storage(storage_name)
-        # Preserve unob's current precedence: global proxy first, then storage.
+        # A global proxy intentionally takes precedence over a storage override.
         proxy_base_url = self.cdn_proxy_base_url or storage.cdn_proxy_base_url
         if not proxy_base_url:
             raise ValueError(
@@ -225,7 +225,7 @@ class ObjectReader:
         )
         return self.get_bucket(storage_name).get_object(key).read()
 
-    # More explicit alias for new callers; read_object preserves unob terminology.
+    # More explicit alias for callers that prefer byte-oriented terminology.
     read_bytes = read_object
 
     def _read_via_cdn_to_file(
