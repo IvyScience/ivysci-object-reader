@@ -1,0 +1,18 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: cdn-proxy
+  namespace: proxy
+  labels:
+    app: cdn-proxy
+    component: cdn-proxy
+spec:
+  # Kubernetes 原生同机房优先路由；故障时仍允许跨机房以保证可用性
+  trafficDistribution: PreferClose
+  selector:
+    app: cdn-proxy
+    component: cdn-proxy
+  ports:
+    - name: http
+      port: 80
+      targetPort: http

@@ -1,0 +1,125 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: cdn-proxy
+  namespace: proxy
+  labels:
+    app: cdn-proxy
+    component: cdn-proxy
+spec:
+  # 2 副本：严格跨两个机房部署 (1 个在 home 机房，1 个在 office 机房)
+  replicas: 2
+  serviceName: cdn-proxy
+  # 并行启动/更新所有副本，无需串行等待
+  podManagementPolicy: Parallel
+  selector:
+    matchLabels:
+      app: cdn-proxy
+      component: cdn-proxy
+  template:
+    metadata:
+      labels:
+        app: cdn-proxy
+        component: cdn-proxy
+    spec:
+      # 1. 调度到各机房打有 cdn-proxy=true 标签的目标节点
+      nodeSelector:
+        cdn-proxy: "true"
+      # 2. 拓扑分布约束：强制跨机房分布 (maxSkew=1, 必须跨 topology.kubernetes.io/zone)
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: topology.kubernetes.io/zone
+          whenUnsatisfiable: DoNotSchedule
+          labelSelector:
+            matchLabels:
+              app: cdn-proxy
+              component: cdn-proxy
+      # 3. 机房强反亲和性：确保 2 个副本严格分属于不同机房 (一个 home，一个 office)
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector:
+                matchLabels:
+                  app: cdn-proxy
+                  component: cdn-proxy
+              topologyKey: topology.kubernetes.io/zone
+      initContainers:
+        - name: init-cache-dir
+          image: nginx:1.27-alpine
+          command:
+            - sh
+            - -c
+            - mkdir -p /var/cache/nginx/cdn && chown nginx:nginx /var/cache/nginx /var/cache/nginx/cdn
+          volumeMounts:
+            - name: cache
+              mountPath: /var/cache/nginx/cdn
+      containers:
+        - name: nginx
+          image: nginx:1.27-alpine
+          ports:
+            - name: http
+              containerPort: 80
+          volumeMounts:
+            - name: nginx-conf
+              mountPath: /etc/nginx/nginx.conf
+              subPath: nginx.conf
+              readOnly: true
+            - name: cache
+              mountPath: /var/cache/nginx/cdn
+          # 就绪探针：
+          # 1. 验证 Nginx 服务本身健康响应
+          # 2. 验证 nginx 运行用户对缓存卷具有实际的写入/删除权限
+          # 3. 验证缓存盘剩余空间安全（可用空间大于 500MB），空间不足时自动摘除流量
+          readinessProbe:
+            exec:
+              command:
+                - sh
+                - -c
+                - |
+                  wget -q -O /dev/null http://127.0.0.1:80/healthz || exit 1
+                  su -s /bin/sh nginx -c "touch /var/cache/nginx/cdn/.healthz_test && rm -f /var/cache/nginx/cdn/.healthz_test" || exit 1
+                  FREE_KB=$(df -k /var/cache/nginx/cdn | awk 'NR==2 {print $4}')
+                  if [ "$FREE_KB" -lt 512000 ]; then
+                    echo "Cache volume disk critically low: ${FREE_KB}KB available" >&2
+                    exit 1
+                  fi
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          # 存活探针：验证进程响应及存储卷可写，死锁或文件系统只读异常时触发重启自愈
+          livenessProbe:
+            exec:
+              command:
+                - sh
+                - -c
+                - |
+                  wget -q -O /dev/null http://127.0.0.1:80/healthz || exit 1
+                  su -s /bin/sh nginx -c "touch /var/cache/nginx/cdn/.healthz_test && rm -f /var/cache/nginx/cdn/.healthz_test" || exit 1
+            initialDelaySeconds: 15
+            periodSeconds: 20
+            timeoutSeconds: 3
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: "2"
+              memory: 2Gi
+      volumes:
+        - name: nginx-conf
+          configMap:
+            name: cdn-proxy-nginx
+  # 4. 自动为每个 Pod 分配独立的 local-path PVC（如 cache-cdn-proxy-0, cache-cdn-proxy-1）
+  # 每台机器/机房独立挂载 200Gi 缓存盘，彻底杜绝多副本 RWO 冲突
+  volumeClaimTemplates:
+    - metadata:
+        name: cache
+      spec:
+        accessModes:
+          - ReadWriteOnce
+        storageClassName: local-path
+        resources:
+          requests:
+            storage: 200Gi

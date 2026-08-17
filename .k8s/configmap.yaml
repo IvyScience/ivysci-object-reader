@@ -1,0 +1,316 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: cdn-proxy-nginx
+  namespace: proxy
+  labels:
+    app: cdn-proxy
+    component: cdn-proxy
+data:
+  nginx.conf: |
+    worker_processes auto;
+    error_log /dev/stderr warn;
+    pid /var/run/nginx.pid;
+
+    events {
+        worker_connections 4096;
+    }
+
+    http {
+        include       /etc/nginx/mime.types;
+        default_type  application/octet-stream;
+        sendfile on;
+        tcp_nopush on;
+        keepalive_timeout 65;
+
+        # 上游 HTTPS 证书强校验 (防 DNS 劫持与中间人攻击 MITM)
+        proxy_ssl_server_name on;
+        proxy_ssl_verify on;
+        proxy_ssl_trusted_certificate /etc/ssl/certs/ca-certificates.crt;
+        proxy_ssl_verify_depth 3;
+        proxy_ssl_protocols TLSv1.2 TLSv1.3;
+
+        # 缓存配置：
+        # - inactive=7d: 7天内无访问自动从磁盘淘汰，确保磁盘空间不被占满
+        # - max_size=200g: 磁盘容量硬上限保护
+        # - use_temp_path=off: 临时文件直接写入缓存目录，利用原子重命名避免跨文件系统开销
+        proxy_cache_path /var/cache/nginx/cdn
+                         levels=1:2
+                         keys_zone=cdn_cache:256m
+                         inactive=7d
+                         max_size=200g
+                         use_temp_path=off;
+
+        map $request_uri $storage_name {
+            ~^/(default-testing|private-testing|scholardata-testing|public-testing|default|private|public|asset|scholardata)/ $1;
+            default "";
+        }
+
+        map $uri $cdn_origin_path {
+            ~^/(?:default-testing|private-testing|scholardata-testing|public-testing|default|private|public|asset|scholardata)(?<p>/.*)$ $p;
+            default $uri;
+        }
+
+        # 剥离阿里云 CDN Type-B 鉴权前缀 (/YYYYMMDDHHMM/32位md5/object_key)，提取规范的对象路径
+        # 使得即使生成不同签名 URL，只要指向同一文件均能命中相同缓存
+        map $cdn_origin_path $cdn_object_key {
+            "~*^/\d{12}/[0-9a-f]{32}(?<obj>/.*)$" $obj;
+            default $cdn_origin_path;
+        }
+
+        log_format cdn_cache '$remote_addr [$time_local] "$request" '
+                             '$status upstream=$upstream_status '
+                             'cache=$upstream_cache_status storage=$storage_name '
+                             'object=$cdn_object_key rt=$request_time';
+        access_log /dev/stdout cdn_cache;
+
+        server {
+            listen 80;
+            server_name _;
+
+            location = /healthz {
+                access_log off;
+                return 200 "ok\n";
+                add_header Content-Type text/plain;
+            }
+
+            # ==================== 生产环境 CDN 映射 ====================
+            location ^~ /default/ {
+                rewrite ^/default/(.*)$ /$1 break;
+                proxy_http_version 1.1;
+                proxy_ssl_server_name on;
+                proxy_set_header Host private.cdn.ivysci.com;
+                proxy_set_header Connection "";
+                proxy_set_header X-Real-IP $remote_addr;
+                proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+                proxy_pass https://private.cdn.ivysci.com;
+                proxy_cache            cdn_cache;
+                proxy_cache_key        default$cdn_object_key$is_args$args;
+                proxy_cache_valid      200 7d;
+                proxy_cache_valid      301 302 1h;
+                proxy_cache_valid      404 1m;
+                proxy_cache_use_stale  error timeout updating http_500 http_502 http_503 http_504;
+                proxy_cache_lock       on;
+                proxy_cache_revalidate on;
+                proxy_ignore_headers   Set-Cookie Cache-Control Expires;
+                add_header             X-Cache-Status $upstream_cache_status always;
+                proxy_buffering        on;
+                proxy_request_buffering off;
+                proxy_max_temp_file_size 0;
+                proxy_read_timeout     300s;
+                proxy_send_timeout     300s;
+                client_max_body_size   0;
+            }
+
+            location ^~ /private/ {
+                rewrite ^/private/(.*)$ /$1 break;
+                proxy_http_version 1.1;
+                proxy_ssl_server_name on;
+                proxy_set_header Host private.cdn.ivysci.com;
+                proxy_set_header Connection "";
+                proxy_set_header X-Real-IP $remote_addr;
+                proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+                proxy_pass https://private.cdn.ivysci.com;
+                proxy_cache            cdn_cache;
+                proxy_cache_key        default$cdn_object_key$is_args$args;
+                proxy_cache_valid      200 7d;
+                proxy_cache_valid      301 302 1h;
+                proxy_cache_valid      404 1m;
+                proxy_cache_use_stale  error timeout updating http_500 http_502 http_503 http_504;
+                proxy_cache_lock       on;
+                proxy_cache_revalidate on;
+                proxy_ignore_headers   Set-Cookie Cache-Control Expires;
+                add_header             X-Cache-Status $upstream_cache_status always;
+                proxy_buffering        on;
+                proxy_request_buffering off;
+                proxy_max_temp_file_size 0;
+                proxy_read_timeout     300s;
+                proxy_send_timeout     300s;
+                client_max_body_size   0;
+            }
+
+            location ^~ /public/ {
+                rewrite ^/public/(.*)$ /$1 break;
+                proxy_http_version 1.1;
+                proxy_ssl_server_name on;
+                proxy_set_header Host public.cdn.ivysci.com;
+                proxy_set_header Connection "";
+                proxy_set_header X-Real-IP $remote_addr;
+                proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+                proxy_pass https://public.cdn.ivysci.com;
+                proxy_cache            cdn_cache;
+                proxy_cache_key        public$cdn_object_key$is_args$args;
+                proxy_cache_valid      200 7d;
+                proxy_cache_valid      404 1m;
+                proxy_cache_use_stale  error timeout updating http_500 http_502 http_503 http_504;
+                proxy_cache_lock       on;
+                proxy_ignore_headers   Set-Cookie Cache-Control Expires;
+                add_header             X-Cache-Status $upstream_cache_status always;
+                proxy_buffering        on;
+                proxy_request_buffering off;
+                proxy_max_temp_file_size 0;
+                proxy_read_timeout     300s;
+                proxy_send_timeout     300s;
+                client_max_body_size   0;
+            }
+
+            location ^~ /asset/ {
+                rewrite ^/asset/(.*)$ /$1 break;
+                proxy_http_version 1.1;
+                proxy_ssl_server_name on;
+                proxy_set_header Host asset.cdn.ivysci.com;
+                proxy_set_header Connection "";
+                proxy_set_header X-Real-IP $remote_addr;
+                proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+                proxy_pass https://asset.cdn.ivysci.com;
+                proxy_cache            cdn_cache;
+                proxy_cache_key        asset$cdn_object_key$is_args$args;
+                proxy_cache_valid      200 7d;
+                proxy_cache_valid      404 1m;
+                proxy_cache_use_stale  error timeout updating http_500 http_502 http_503 http_504;
+                proxy_cache_lock       on;
+                proxy_ignore_headers   Set-Cookie Cache-Control Expires;
+                add_header             X-Cache-Status $upstream_cache_status always;
+                proxy_buffering        on;
+                proxy_request_buffering off;
+                proxy_max_temp_file_size 0;
+                proxy_read_timeout     300s;
+                proxy_send_timeout     300s;
+                client_max_body_size   0;
+            }
+
+            location ^~ /scholardata/ {
+                rewrite ^/scholardata/(.*)$ /$1 break;
+                proxy_http_version 1.1;
+                proxy_ssl_server_name on;
+                proxy_set_header Host scholardata.cdn.ivysci.com;
+                proxy_set_header Connection "";
+                proxy_set_header X-Real-IP $remote_addr;
+                proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+                proxy_pass https://scholardata.cdn.ivysci.com;
+                proxy_cache            cdn_cache;
+                proxy_cache_key        scholardata$cdn_object_key$is_args$args;
+                proxy_cache_valid      200 7d;
+                proxy_cache_valid      404 1m;
+                proxy_cache_use_stale  error timeout updating http_500 http_502 http_503 http_504;
+                proxy_cache_lock       on;
+                proxy_ignore_headers   Set-Cookie Cache-Control Expires;
+                add_header             X-Cache-Status $upstream_cache_status always;
+                proxy_buffering        on;
+                proxy_request_buffering off;
+                proxy_max_temp_file_size 0;
+                proxy_read_timeout     300s;
+                proxy_send_timeout     300s;
+                client_max_body_size   0;
+            }
+
+            # ==================== 测试环境 CDN 映射 ====================
+            location ^~ /default-testing/ {
+                rewrite ^/default-testing/(.*)$ /$1 break;
+                proxy_http_version 1.1;
+                proxy_ssl_server_name on;
+                proxy_set_header Host private-testing.cdn.ivysci.com;
+                proxy_set_header Connection "";
+                proxy_set_header X-Real-IP $remote_addr;
+                proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+                proxy_pass https://private-testing.cdn.ivysci.com;
+                proxy_cache            cdn_cache;
+                proxy_cache_key        default_testing$cdn_object_key$is_args$args;
+                proxy_cache_valid      200 7d;
+                proxy_cache_valid      301 302 1h;
+                proxy_cache_valid      404 1m;
+                proxy_cache_use_stale  error timeout updating http_500 http_502 http_503 http_504;
+                proxy_cache_lock       on;
+                proxy_cache_revalidate on;
+                proxy_ignore_headers   Set-Cookie Cache-Control Expires;
+                add_header             X-Cache-Status $upstream_cache_status always;
+                proxy_buffering        on;
+                proxy_request_buffering off;
+                proxy_max_temp_file_size 0;
+                proxy_read_timeout     300s;
+                proxy_send_timeout     300s;
+                client_max_body_size   0;
+            }
+
+            location ^~ /private-testing/ {
+                rewrite ^/private-testing/(.*)$ /$1 break;
+                proxy_http_version 1.1;
+                proxy_ssl_server_name on;
+                proxy_set_header Host private-testing.cdn.ivysci.com;
+                proxy_set_header Connection "";
+                proxy_set_header X-Real-IP $remote_addr;
+                proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+                proxy_pass https://private-testing.cdn.ivysci.com;
+                proxy_cache            cdn_cache;
+                proxy_cache_key        default_testing$cdn_object_key$is_args$args;
+                proxy_cache_valid      200 7d;
+                proxy_cache_valid      301 302 1h;
+                proxy_cache_valid      404 1m;
+                proxy_cache_use_stale  error timeout updating http_500 http_502 http_503 http_504;
+                proxy_cache_lock       on;
+                proxy_cache_revalidate on;
+                proxy_ignore_headers   Set-Cookie Cache-Control Expires;
+                add_header             X-Cache-Status $upstream_cache_status always;
+                proxy_buffering        on;
+                proxy_request_buffering off;
+                proxy_max_temp_file_size 0;
+                proxy_read_timeout     300s;
+                proxy_send_timeout     300s;
+                client_max_body_size   0;
+            }
+
+            location ^~ /public-testing/ {
+                rewrite ^/public-testing/(.*)$ /$1 break;
+                proxy_http_version 1.1;
+                proxy_ssl_server_name on;
+                proxy_set_header Host public-testing.cdn.ivysci.com;
+                proxy_set_header Connection "";
+                proxy_set_header X-Real-IP $remote_addr;
+                proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+                proxy_pass https://public-testing.cdn.ivysci.com;
+                proxy_cache            cdn_cache;
+                proxy_cache_key        public_testing$cdn_object_key$is_args$args;
+                proxy_cache_valid      200 7d;
+                proxy_cache_valid      404 1m;
+                proxy_cache_use_stale  error timeout updating http_500 http_502 http_503 http_504;
+                proxy_cache_lock       on;
+                proxy_ignore_headers   Set-Cookie Cache-Control Expires;
+                add_header             X-Cache-Status $upstream_cache_status always;
+                proxy_buffering        on;
+                proxy_request_buffering off;
+                proxy_max_temp_file_size 0;
+                proxy_read_timeout     300s;
+                proxy_send_timeout     300s;
+                client_max_body_size   0;
+            }
+
+            location ^~ /scholardata-testing/ {
+                rewrite ^/scholardata-testing/(.*)$ /$1 break;
+                proxy_http_version 1.1;
+                proxy_ssl_server_name on;
+                proxy_set_header Host scholardata-testing.cdn.ivysci.com;
+                proxy_set_header Connection "";
+                proxy_set_header X-Real-IP $remote_addr;
+                proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+                proxy_pass https://scholardata-testing.cdn.ivysci.com;
+                proxy_cache            cdn_cache;
+                proxy_cache_key        scholardata_testing$cdn_object_key$is_args$args;
+                proxy_cache_valid      200 7d;
+                proxy_cache_valid      404 1m;
+                proxy_cache_use_stale  error timeout updating http_500 http_502 http_503 http_504;
+                proxy_cache_lock       on;
+                proxy_ignore_headers   Set-Cookie Cache-Control Expires;
+                add_header             X-Cache-Status $upstream_cache_status always;
+                proxy_buffering        on;
+                proxy_request_buffering off;
+                proxy_max_temp_file_size 0;
+                proxy_read_timeout     300s;
+                proxy_send_timeout     300s;
+                client_max_body_size   0;
+            }
+
+            location / {
+                return 404 "unknown storage prefix. expected: /default /private /public /asset /scholardata or testing variants\n";
+            }
+        }
+    }
