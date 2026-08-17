@@ -19,14 +19,14 @@ Install a tagged release directly from the public GitHub repository:
 
 ```bash
 python -m pip install \
-  "ivysci-object-reader @ git+https://github.com/IvyScience/ivysci-object-reader.git@v0.1.1"
+  "ivysci-object-reader @ git+https://github.com/IvyScience/ivysci-object-reader.git@v0.1.2"
 ```
 
 Poetry:
 
 ```toml
 [tool.poetry.dependencies]
-ivysci-object-reader = { git = "https://github.com/IvyScience/ivysci-object-reader.git", tag = "v0.1.1" }
+ivysci-object-reader = { git = "https://github.com/IvyScience/ivysci-object-reader.git", tag = "v0.1.2" }
 ```
 
 ## Usage
@@ -78,6 +78,10 @@ New callers may use the equivalent names `read_bytes()` and `download_file()`.
 Configuration remains owned by the host project. Convert the values loaded by
 your preferred settings system into `AliyunCredentials` and `StorageConfig`,
 then pass them to `ObjectReader`.
+
+Proxy URLs are `{cdn_proxy_base_url}/{prefix}/{signed_path}`. `prefix` defaults
+to the storage name; set `StorageConfig.cdn_proxy_prefix` when a shared nginx
+proxy must distinguish environments (for example `default` vs `default-testing`).
 
 Never commit credentials or CDN signing keys to an application repository.
 

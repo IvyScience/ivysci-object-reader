@@ -30,6 +30,9 @@ class StorageConfig:
     region: str = "cn-shanghai"
     cdn_base_url: str | None = None
     cdn_proxy_base_url: str | None = None
+    # Nginx routing prefix. Distinct from the application storage name so a
+    # shared proxy can tell production `/default/` from testing `/default-testing/`.
+    cdn_proxy_prefix: str | None = None
     cdn_auth_key: str | None = field(default=None, repr=False)
     cdn_url_ttl: int | None = None
 
@@ -38,6 +41,11 @@ class StorageConfig:
             raise ValueError("bucket_name is required")
         if not self.region:
             raise ValueError("region is required")
+        if self.cdn_proxy_prefix is not None:
+            prefix = self.cdn_proxy_prefix.strip("/")
+            if not prefix:
+                raise ValueError("cdn_proxy_prefix must not be empty")
+            object.__setattr__(self, "cdn_proxy_prefix", prefix)
         if self.cdn_auth_key and not self.cdn_url_ttl:
             raise ValueError("cdn_url_ttl is required when cdn_auth_key is set")
         if self.cdn_url_ttl is not None and self.cdn_url_ttl <= 0:

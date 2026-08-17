@@ -37,6 +37,25 @@ def test_cdn_download_url_prefers_internal_proxy(storage):
     reader.close()
 
 
+def test_cdn_proxy_url_uses_cdn_proxy_prefix(storage):
+    storage = StorageConfig(
+        bucket_name="example-documents-bucket",
+        cdn_base_url="https://cdn.example.com/",
+        cdn_proxy_prefix="default-testing",
+        cdn_auth_key="test-cdn-signing-key",
+        cdn_url_ttl=3600,
+    )
+    reader = make_reader(
+        storage, cdn_proxy_base_url="http://cache.internal.example/"
+    )
+
+    url = reader.cdn_download_url("fixtures/example-document.pdf")
+
+    assert url.startswith("http://cache.internal.example/default-testing/")
+    assert "/default/" not in url
+    reader.close()
+
+
 def test_cdn_download_url_uses_public_cdn_without_proxy(storage):
     reader = make_reader(storage)
 

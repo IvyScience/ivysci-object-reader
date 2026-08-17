@@ -162,7 +162,8 @@ class ObjectReader:
                 "cdn_proxy_base_url is required when calling cdn_proxy_url"
             )
         signed_path = self._signed_path(storage, key, ttl)
-        path = f"{storage_name}/{signed_path.lstrip('/')}"
+        prefix = storage.cdn_proxy_prefix or storage_name
+        path = f"{prefix}/{signed_path.lstrip('/')}"
         return self._with_query(self._join_url(proxy_base_url, path), query)
 
     def cdn_download_url(

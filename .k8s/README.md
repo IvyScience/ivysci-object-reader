@@ -5,7 +5,8 @@
 ## 1. 架构与三层下载结构
 
 1. **Tier 1 (Nginx 内网缓存代理)**:
-   - 内部服务地址：`http://cdn-proxy.proxy.svc.cluster.local/{storage_name}/{signed_path}`
+   - 内部服务地址：`http://cdn-proxy.proxy.svc.cluster.local/{cdn_proxy_prefix}/{signed_path}`
+   - `cdn_proxy_prefix` 默认等于应用 storage 名；测试环境应使用 nginx 已有的 `/default-testing/`、`/public-testing/`、`/scholardata-testing/`，以便和生产 `/default/` 等前缀区分。
    - 缓存策略：`inactive=7d`（7天未被访问/touch 的文件由 Nginx 缓存管理器自动删除，避免撑爆磁盘），`max_size=200g`。
    - 鉴权归一化：动态 Type-B 签名 URL 会自动剥离鉴权前缀，统一使用规范对象路径作为 Cache Key，确保不同时刻签名的相同文件命中同一份本地磁盘缓存。
    - 仅缓存 HTTP 200 完整文件，杜绝 206 Range 分片污染，由 Nginx 内部切片模块提供本地分片支持。
