@@ -162,8 +162,8 @@ class ObjectReader:
                 "cdn_proxy_base_url is required when calling cdn_proxy_url"
             )
         signed_path = self._signed_path(storage, key, ttl)
-        prefix = storage.cdn_proxy_prefix or storage_name
-        path = f"{prefix}/{signed_path.lstrip('/')}"
+        # Nginx routes by OSS bucket: /{bucket_name}/{signed_path} -> that bucket's CDN.
+        path = f"{storage.bucket_name}/{signed_path.lstrip('/')}"
         return self._with_query(self._join_url(proxy_base_url, path), query)
 
     def cdn_download_url(

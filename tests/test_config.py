@@ -15,11 +15,6 @@ def test_cdn_auth_requires_ttl():
         StorageConfig(bucket_name="bucket", cdn_auth_key="secret")
 
 
-def test_cdn_proxy_prefix_rejects_empty():
-    with pytest.raises(ValueError, match="cdn_proxy_prefix"):
-        StorageConfig(bucket_name="bucket", cdn_proxy_prefix="/")
-
-
 def test_aliyun_endpoints_are_computed_from_region():
     storage = StorageConfig(bucket_name="bucket", region="cn-hangzhou")
 

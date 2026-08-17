@@ -5,22 +5,23 @@
 ## 1. 架构与三层下载结构
 
 1. **Tier 1 (Nginx 内网缓存代理)**:
-   - 内部服务地址：`http://cdn-proxy.proxy.svc.cluster.local/{cdn_proxy_prefix}/{signed_path}`
-   - `cdn_proxy_prefix` 默认等于应用 storage 名；测试环境应使用 nginx 已有的 `/default-testing/`、`/public-testing/`、`/scholardata-testing/`，以便和生产 `/default/` 等前缀区分。
+   - 内部服务地址：`http://cdn-proxy.proxy.svc.cluster.local/{oss_bucket}/{signed_path}`
+   - **命名原则：路径第一段 = OSS bucket 名，bucket 与 CDN 一一对应。**
    - 缓存策略：`inactive=7d`（7天未被访问/touch 的文件由 Nginx 缓存管理器自动删除，避免撑爆磁盘），`max_size=200g`。
    - 鉴权归一化：动态 Type-B 签名 URL 会自动剥离鉴权前缀，统一使用规范对象路径作为 Cache Key，确保不同时刻签名的相同文件命中同一份本地磁盘缓存。
    - 仅缓存 HTTP 200 完整文件，杜绝 206 Range 分片污染，由 Nginx 内部切片模块提供本地分片支持。
 2. **Tier 2 (公网 CDN 回源)**:
    - 缓存未命中或过期时，Nginx 自动透传请求至对应阿里云公网 CDN，并带 `proxy_cache_lock on` 防击穿。
    - 开启上游 TLS 证书及受信任 CA 严格校验，防止 DNS 劫持与 MITM 攻击。
-   - 统一支持所有存储前缀及生产/测试域名：
-     - `/default/`, `/private/` -> `https://private.cdn.ivysci.com`
-     - `/default-testing/`, `/private-testing/` -> `https://private-testing.cdn.ivysci.com`
-     - `/public/` -> `https://public.cdn.ivysci.com`
-     - `/public-testing/` -> `https://public-testing.cdn.ivysci.com`
-     - `/asset/` -> `https://asset.cdn.ivysci.com`
-     - `/scholardata/` -> `https://scholardata.cdn.ivysci.com`
-     - `/scholardata-testing/` -> `https://scholardata-testing.cdn.ivysci.com`
+   - bucket → CDN：
+     - `/ivypri/` -> `https://private.cdn.ivysci.com`
+     - `/ivypri-testing/` -> `https://private-testing.cdn.ivysci.com`
+     - `/ivypub/` -> `https://public.cdn.ivysci.com`
+     - `/ivypub-testing/` -> `https://public-testing.cdn.ivysci.com`
+     - `/ivyasset/` -> `https://asset.cdn.ivysci.com`
+     - `/ivyscholardata/` -> `https://scholardata.cdn.ivysci.com`
+     - `/ivyscholardata-testing/` -> `https://scholardata-testing.cdn.ivysci.com`
+   - 待下线别名（rewrite 到上表，随后删除）：`/default/` `/private/` → `/ivypri/`，`/default-testing/` `/private-testing/` → `/ivypri-testing/`，以及 `/public/` `/asset/` `/scholardata/` 的对应关系。
 3. **Tier 3 (OSS SDK 直接降级)**:
    - `ivysci_object_reader` 在遇到网络异常或 5xx 故障时，自动回退调用 Aliyun OSS SDK 直接下载。
 

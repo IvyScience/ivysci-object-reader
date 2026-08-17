@@ -41,13 +41,14 @@ data:
                          max_size=200g
                          use_temp_path=off;
 
+        # 路径第一段 = OSS bucket 名（及待下线的应用别名）
         map $request_uri $storage_name {
-            ~^/(default-testing|private-testing|scholardata-testing|public-testing|default|private|public|asset|scholardata)/ $1;
+            ~^/(ivyscholardata-testing|ivypri-testing|ivypub-testing|default-testing|private-testing|scholardata-testing|public-testing|ivyscholardata|ivyasset|ivypri|ivypub|default|private|public|asset|scholardata)/ $1;
             default "";
         }
 
         map $uri $cdn_origin_path {
-            ~^/(?:default-testing|private-testing|scholardata-testing|public-testing|default|private|public|asset|scholardata)(?<p>/.*)$ $p;
+            ~^/(?:ivyscholardata-testing|ivypri-testing|ivypub-testing|default-testing|private-testing|scholardata-testing|public-testing|ivyscholardata|ivyasset|ivypri|ivypub|default|private|public|asset|scholardata)(?<p>/.*)$ $p;
             default $uri;
         }
 
@@ -74,9 +75,12 @@ data:
                 add_header Content-Type text/plain;
             }
 
-            # ==================== 生产环境 CDN 映射 ====================
-            location ^~ /default/ {
-                rewrite ^/default/(.*)$ /$1 break;
+            # 命名原则：/{oss_bucket}/{signed_path} -> 该 bucket 的 CDN。
+            # cache key 用 bucket 名，别名 rewrite 进来后与主路径共享缓存。
+
+            # ==================== 生产 bucket -> CDN ====================
+            location ^~ /ivypri/ {
+                rewrite ^/ivypri/(.*)$ /$1 break;
                 proxy_http_version 1.1;
                 proxy_ssl_server_name on;
                 proxy_set_header Host private.cdn.ivysci.com;
@@ -85,7 +89,7 @@ data:
                 proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
                 proxy_pass https://private.cdn.ivysci.com;
                 proxy_cache            cdn_cache;
-                proxy_cache_key        default$cdn_object_key$is_args$args;
+                proxy_cache_key        ivypri$cdn_object_key$is_args$args;
                 proxy_cache_valid      200 7d;
                 proxy_cache_valid      301 302 1h;
                 proxy_cache_valid      404 1m;
@@ -102,35 +106,8 @@ data:
                 client_max_body_size   0;
             }
 
-            location ^~ /private/ {
-                rewrite ^/private/(.*)$ /$1 break;
-                proxy_http_version 1.1;
-                proxy_ssl_server_name on;
-                proxy_set_header Host private.cdn.ivysci.com;
-                proxy_set_header Connection "";
-                proxy_set_header X-Real-IP $remote_addr;
-                proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-                proxy_pass https://private.cdn.ivysci.com;
-                proxy_cache            cdn_cache;
-                proxy_cache_key        default$cdn_object_key$is_args$args;
-                proxy_cache_valid      200 7d;
-                proxy_cache_valid      301 302 1h;
-                proxy_cache_valid      404 1m;
-                proxy_cache_use_stale  error timeout updating http_500 http_502 http_503 http_504;
-                proxy_cache_lock       on;
-                proxy_cache_revalidate on;
-                proxy_ignore_headers   Set-Cookie Cache-Control Expires;
-                add_header             X-Cache-Status $upstream_cache_status always;
-                proxy_buffering        on;
-                proxy_request_buffering off;
-                proxy_max_temp_file_size 0;
-                proxy_read_timeout     300s;
-                proxy_send_timeout     300s;
-                client_max_body_size   0;
-            }
-
-            location ^~ /public/ {
-                rewrite ^/public/(.*)$ /$1 break;
+            location ^~ /ivypub/ {
+                rewrite ^/ivypub/(.*)$ /$1 break;
                 proxy_http_version 1.1;
                 proxy_ssl_server_name on;
                 proxy_set_header Host public.cdn.ivysci.com;
@@ -139,7 +116,7 @@ data:
                 proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
                 proxy_pass https://public.cdn.ivysci.com;
                 proxy_cache            cdn_cache;
-                proxy_cache_key        public$cdn_object_key$is_args$args;
+                proxy_cache_key        ivypub$cdn_object_key$is_args$args;
                 proxy_cache_valid      200 7d;
                 proxy_cache_valid      404 1m;
                 proxy_cache_use_stale  error timeout updating http_500 http_502 http_503 http_504;
@@ -154,8 +131,8 @@ data:
                 client_max_body_size   0;
             }
 
-            location ^~ /asset/ {
-                rewrite ^/asset/(.*)$ /$1 break;
+            location ^~ /ivyasset/ {
+                rewrite ^/ivyasset/(.*)$ /$1 break;
                 proxy_http_version 1.1;
                 proxy_ssl_server_name on;
                 proxy_set_header Host asset.cdn.ivysci.com;
@@ -164,7 +141,7 @@ data:
                 proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
                 proxy_pass https://asset.cdn.ivysci.com;
                 proxy_cache            cdn_cache;
-                proxy_cache_key        asset$cdn_object_key$is_args$args;
+                proxy_cache_key        ivyasset$cdn_object_key$is_args$args;
                 proxy_cache_valid      200 7d;
                 proxy_cache_valid      404 1m;
                 proxy_cache_use_stale  error timeout updating http_500 http_502 http_503 http_504;
@@ -179,8 +156,8 @@ data:
                 client_max_body_size   0;
             }
 
-            location ^~ /scholardata/ {
-                rewrite ^/scholardata/(.*)$ /$1 break;
+            location ^~ /ivyscholardata/ {
+                rewrite ^/ivyscholardata/(.*)$ /$1 break;
                 proxy_http_version 1.1;
                 proxy_ssl_server_name on;
                 proxy_set_header Host scholardata.cdn.ivysci.com;
@@ -189,7 +166,7 @@ data:
                 proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
                 proxy_pass https://scholardata.cdn.ivysci.com;
                 proxy_cache            cdn_cache;
-                proxy_cache_key        scholardata$cdn_object_key$is_args$args;
+                proxy_cache_key        ivyscholardata$cdn_object_key$is_args$args;
                 proxy_cache_valid      200 7d;
                 proxy_cache_valid      404 1m;
                 proxy_cache_use_stale  error timeout updating http_500 http_502 http_503 http_504;
@@ -204,9 +181,9 @@ data:
                 client_max_body_size   0;
             }
 
-            # ==================== 测试环境 CDN 映射 ====================
-            location ^~ /default-testing/ {
-                rewrite ^/default-testing/(.*)$ /$1 break;
+            # ==================== 测试 bucket -> CDN ====================
+            location ^~ /ivypri-testing/ {
+                rewrite ^/ivypri-testing/(.*)$ /$1 break;
                 proxy_http_version 1.1;
                 proxy_ssl_server_name on;
                 proxy_set_header Host private-testing.cdn.ivysci.com;
@@ -215,7 +192,7 @@ data:
                 proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
                 proxy_pass https://private-testing.cdn.ivysci.com;
                 proxy_cache            cdn_cache;
-                proxy_cache_key        default_testing$cdn_object_key$is_args$args;
+                proxy_cache_key        ivypri-testing$cdn_object_key$is_args$args;
                 proxy_cache_valid      200 7d;
                 proxy_cache_valid      301 302 1h;
                 proxy_cache_valid      404 1m;
@@ -232,35 +209,8 @@ data:
                 client_max_body_size   0;
             }
 
-            location ^~ /private-testing/ {
-                rewrite ^/private-testing/(.*)$ /$1 break;
-                proxy_http_version 1.1;
-                proxy_ssl_server_name on;
-                proxy_set_header Host private-testing.cdn.ivysci.com;
-                proxy_set_header Connection "";
-                proxy_set_header X-Real-IP $remote_addr;
-                proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-                proxy_pass https://private-testing.cdn.ivysci.com;
-                proxy_cache            cdn_cache;
-                proxy_cache_key        default_testing$cdn_object_key$is_args$args;
-                proxy_cache_valid      200 7d;
-                proxy_cache_valid      301 302 1h;
-                proxy_cache_valid      404 1m;
-                proxy_cache_use_stale  error timeout updating http_500 http_502 http_503 http_504;
-                proxy_cache_lock       on;
-                proxy_cache_revalidate on;
-                proxy_ignore_headers   Set-Cookie Cache-Control Expires;
-                add_header             X-Cache-Status $upstream_cache_status always;
-                proxy_buffering        on;
-                proxy_request_buffering off;
-                proxy_max_temp_file_size 0;
-                proxy_read_timeout     300s;
-                proxy_send_timeout     300s;
-                client_max_body_size   0;
-            }
-
-            location ^~ /public-testing/ {
-                rewrite ^/public-testing/(.*)$ /$1 break;
+            location ^~ /ivypub-testing/ {
+                rewrite ^/ivypub-testing/(.*)$ /$1 break;
                 proxy_http_version 1.1;
                 proxy_ssl_server_name on;
                 proxy_set_header Host public-testing.cdn.ivysci.com;
@@ -269,7 +219,7 @@ data:
                 proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
                 proxy_pass https://public-testing.cdn.ivysci.com;
                 proxy_cache            cdn_cache;
-                proxy_cache_key        public_testing$cdn_object_key$is_args$args;
+                proxy_cache_key        ivypub-testing$cdn_object_key$is_args$args;
                 proxy_cache_valid      200 7d;
                 proxy_cache_valid      404 1m;
                 proxy_cache_use_stale  error timeout updating http_500 http_502 http_503 http_504;
@@ -284,8 +234,8 @@ data:
                 client_max_body_size   0;
             }
 
-            location ^~ /scholardata-testing/ {
-                rewrite ^/scholardata-testing/(.*)$ /$1 break;
+            location ^~ /ivyscholardata-testing/ {
+                rewrite ^/ivyscholardata-testing/(.*)$ /$1 break;
                 proxy_http_version 1.1;
                 proxy_ssl_server_name on;
                 proxy_set_header Host scholardata-testing.cdn.ivysci.com;
@@ -294,7 +244,7 @@ data:
                 proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
                 proxy_pass https://scholardata-testing.cdn.ivysci.com;
                 proxy_cache            cdn_cache;
-                proxy_cache_key        scholardata_testing$cdn_object_key$is_args$args;
+                proxy_cache_key        ivyscholardata-testing$cdn_object_key$is_args$args;
                 proxy_cache_valid      200 7d;
                 proxy_cache_valid      404 1m;
                 proxy_cache_use_stale  error timeout updating http_500 http_502 http_503 http_504;
@@ -309,8 +259,38 @@ data:
                 client_max_body_size   0;
             }
 
+            # ==================== 待下线别名（应用 storage 名）====================
+            # unob 仍可能发 /default-testing/；rewrite 到 bucket 主路径后下线这些 location。
+            location ^~ /default/ {
+                rewrite ^/default/(.*)$ /ivypri/$1 last;
+            }
+            location ^~ /private/ {
+                rewrite ^/private/(.*)$ /ivypri/$1 last;
+            }
+            location ^~ /public/ {
+                rewrite ^/public/(.*)$ /ivypub/$1 last;
+            }
+            location ^~ /asset/ {
+                rewrite ^/asset/(.*)$ /ivyasset/$1 last;
+            }
+            location ^~ /scholardata/ {
+                rewrite ^/scholardata/(.*)$ /ivyscholardata/$1 last;
+            }
+            location ^~ /default-testing/ {
+                rewrite ^/default-testing/(.*)$ /ivypri-testing/$1 last;
+            }
+            location ^~ /private-testing/ {
+                rewrite ^/private-testing/(.*)$ /ivypri-testing/$1 last;
+            }
+            location ^~ /public-testing/ {
+                rewrite ^/public-testing/(.*)$ /ivypub-testing/$1 last;
+            }
+            location ^~ /scholardata-testing/ {
+                rewrite ^/scholardata-testing/(.*)$ /ivyscholardata-testing/$1 last;
+            }
+
             location / {
-                return 404 "unknown storage prefix. expected: /default /private /public /asset /scholardata or testing variants\n";
+                return 404 "unknown storage prefix. expected OSS bucket name (e.g. /ivypri /ivypri-testing)\n";
             }
         }
     }

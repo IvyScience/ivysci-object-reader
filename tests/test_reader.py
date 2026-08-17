@@ -32,16 +32,17 @@ def test_cdn_download_url_prefers_internal_proxy(storage):
 
     url = reader.cdn_download_url("fixtures/example-document.pdf")
 
-    assert url.startswith("http://cache.internal.example/default/")
+    assert url.startswith(
+        "http://cache.internal.example/example-documents-bucket/"
+    )
     assert url.endswith("/fixtures/example-document.pdf")
     reader.close()
 
 
-def test_cdn_proxy_url_uses_cdn_proxy_prefix(storage):
+def test_cdn_proxy_url_uses_bucket_name_not_storage_name():
     storage = StorageConfig(
-        bucket_name="example-documents-bucket",
-        cdn_base_url="https://cdn.example.com/",
-        cdn_proxy_prefix="default-testing",
+        bucket_name="ivypri-testing",
+        cdn_base_url="https://private-testing.cdn.ivysci.com/",
         cdn_auth_key="test-cdn-signing-key",
         cdn_url_ttl=3600,
     )
@@ -51,7 +52,7 @@ def test_cdn_proxy_url_uses_cdn_proxy_prefix(storage):
 
     url = reader.cdn_download_url("fixtures/example-document.pdf")
 
-    assert url.startswith("http://cache.internal.example/default-testing/")
+    assert url.startswith("http://cache.internal.example/ivypri-testing/")
     assert "/default/" not in url
     reader.close()
 
