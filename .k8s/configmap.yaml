@@ -87,6 +87,14 @@ data:
             default "";
         }
 
+        # 从客户端发送的原始 URI 中仅剥离 bucket/别名前缀，保留 %XX 编码和查询参数。
+        # CDN Type-B 签名包含编码后的路径；若使用 rewrite，Nginx 会先规范化 URI，
+        # 例如将 %3D 解码成 =，导致转发路径与签名输入不一致并返回 403。
+        map $request_uri $cdn_upstream_uri {
+            "~^/(?:ivyscholardata-testing|ivypri-testing|ivypub-testing|default-testing|private-testing|scholardata-testing|public-testing|ivyscholardata|ivyasset|ivypri|ivypub|default|private|public|asset|scholardata)(?<origin_request_uri>/.*)$" $origin_request_uri;
+            default "";
+        }
+
         map $uri $cdn_origin_path {
             ~^/(?:ivyscholardata-testing|ivypri-testing|ivypub-testing|default-testing|private-testing|scholardata-testing|public-testing|ivyscholardata|ivyasset|ivypri|ivypub|default|private|public|asset|scholardata)(?<p>/.*)$ $p;
             default $uri;
@@ -120,7 +128,6 @@ data:
 
             # ==================== 生产 bucket -> CDN ====================
             location ^~ /ivypri/ {
-                rewrite ^/ivypri/(.*)$ /$1 break;
                 proxy_http_version 1.1;
                 proxy_ssl_server_name on;
                 proxy_ssl_name private.cdn.ivysci.com;
@@ -128,7 +135,7 @@ data:
                 proxy_set_header Connection "";
                 proxy_set_header X-Real-IP $remote_addr;
                 proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-                proxy_pass https://private_cdn;
+                proxy_pass https://private_cdn$cdn_upstream_uri;
                 proxy_cache            cdn_cache;
                 proxy_cache_key        ivypri$cdn_object_key$is_args$args;
                 proxy_cache_valid      200 7d;
@@ -148,7 +155,6 @@ data:
             }
 
             location ^~ /ivypub/ {
-                rewrite ^/ivypub/(.*)$ /$1 break;
                 proxy_http_version 1.1;
                 proxy_ssl_server_name on;
                 proxy_ssl_name public.cdn.ivysci.com;
@@ -156,7 +162,7 @@ data:
                 proxy_set_header Connection "";
                 proxy_set_header X-Real-IP $remote_addr;
                 proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-                proxy_pass https://public_cdn;
+                proxy_pass https://public_cdn$cdn_upstream_uri;
                 proxy_cache            cdn_cache;
                 proxy_cache_key        ivypub$cdn_object_key$is_args$args;
                 proxy_cache_valid      200 7d;
@@ -174,7 +180,6 @@ data:
             }
 
             location ^~ /ivyasset/ {
-                rewrite ^/ivyasset/(.*)$ /$1 break;
                 proxy_http_version 1.1;
                 proxy_ssl_server_name on;
                 proxy_ssl_name asset.cdn.ivysci.com;
@@ -182,7 +187,7 @@ data:
                 proxy_set_header Connection "";
                 proxy_set_header X-Real-IP $remote_addr;
                 proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-                proxy_pass https://asset_cdn;
+                proxy_pass https://asset_cdn$cdn_upstream_uri;
                 proxy_cache            cdn_cache;
                 proxy_cache_key        ivyasset$cdn_object_key$is_args$args;
                 proxy_cache_valid      200 7d;
@@ -200,7 +205,6 @@ data:
             }
 
             location ^~ /ivyscholardata/ {
-                rewrite ^/ivyscholardata/(.*)$ /$1 break;
                 proxy_http_version 1.1;
                 proxy_ssl_server_name on;
                 proxy_ssl_name scholardata.cdn.ivysci.com;
@@ -208,7 +212,7 @@ data:
                 proxy_set_header Connection "";
                 proxy_set_header X-Real-IP $remote_addr;
                 proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-                proxy_pass https://scholardata_cdn;
+                proxy_pass https://scholardata_cdn$cdn_upstream_uri;
                 proxy_cache            cdn_cache;
                 proxy_cache_key        ivyscholardata$cdn_object_key$is_args$args;
                 proxy_cache_valid      200 7d;
@@ -227,7 +231,6 @@ data:
 
             # ==================== 测试 bucket -> CDN ====================
             location ^~ /ivypri-testing/ {
-                rewrite ^/ivypri-testing/(.*)$ /$1 break;
                 proxy_http_version 1.1;
                 proxy_ssl_server_name on;
                 proxy_ssl_name private-testing.cdn.ivysci.com;
@@ -235,7 +238,7 @@ data:
                 proxy_set_header Connection "";
                 proxy_set_header X-Real-IP $remote_addr;
                 proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-                proxy_pass https://private_testing_cdn;
+                proxy_pass https://private_testing_cdn$cdn_upstream_uri;
                 proxy_cache            cdn_cache;
                 proxy_cache_key        ivypri-testing$cdn_object_key$is_args$args;
                 proxy_cache_valid      200 7d;
@@ -255,7 +258,6 @@ data:
             }
 
             location ^~ /ivypub-testing/ {
-                rewrite ^/ivypub-testing/(.*)$ /$1 break;
                 proxy_http_version 1.1;
                 proxy_ssl_server_name on;
                 proxy_ssl_name public-testing.cdn.ivysci.com;
@@ -263,7 +265,7 @@ data:
                 proxy_set_header Connection "";
                 proxy_set_header X-Real-IP $remote_addr;
                 proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-                proxy_pass https://public_testing_cdn;
+                proxy_pass https://public_testing_cdn$cdn_upstream_uri;
                 proxy_cache            cdn_cache;
                 proxy_cache_key        ivypub-testing$cdn_object_key$is_args$args;
                 proxy_cache_valid      200 7d;
@@ -281,7 +283,6 @@ data:
             }
 
             location ^~ /ivyscholardata-testing/ {
-                rewrite ^/ivyscholardata-testing/(.*)$ /$1 break;
                 proxy_http_version 1.1;
                 proxy_ssl_server_name on;
                 proxy_ssl_name scholardata-testing.cdn.ivysci.com;
@@ -289,7 +290,7 @@ data:
                 proxy_set_header Connection "";
                 proxy_set_header X-Real-IP $remote_addr;
                 proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-                proxy_pass https://scholardata_testing_cdn;
+                proxy_pass https://scholardata_testing_cdn$cdn_upstream_uri;
                 proxy_cache            cdn_cache;
                 proxy_cache_key        ivyscholardata-testing$cdn_object_key$is_args$args;
                 proxy_cache_valid      200 7d;
