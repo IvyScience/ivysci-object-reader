@@ -178,13 +178,6 @@ class ObjectReader:
             return self.cdn_proxy_url(key, storage_name, ttl, query)
         return self.cdn_url(key, storage_name, ttl, query)
 
-    @staticmethod
-    def _is_not_found(exc: httpx.HTTPError) -> bool:
-        return (
-            isinstance(exc, httpx.HTTPStatusError)
-            and exc.response.status_code == 404
-        )
-
     def _read_via_cdn(
         self,
         key: str,
@@ -198,9 +191,7 @@ class ObjectReader:
             response = self._client.get(url)
             response.raise_for_status()
             return response.content
-        except httpx.HTTPError as exc:
-            if self._is_not_found(exc):
-                raise
+        except httpx.HTTPError:
             logger.warning(
                 "CDN download failed, falling back to OSS: storage=%s key=%s",
                 storage_name,
@@ -253,10 +244,8 @@ class ObjectReader:
                         file.write(chunk)
             temporary_path.replace(path)
             return path
-        except httpx.HTTPError as exc:
+        except httpx.HTTPError:
             temporary_path.unlink(missing_ok=True)
-            if self._is_not_found(exc):
-                raise
             logger.warning(
                 "CDN file download failed, falling back to OSS: storage=%s key=%s",
                 storage_name,
