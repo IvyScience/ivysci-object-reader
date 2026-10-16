@@ -150,22 +150,22 @@ def test_read_object_falls_back_to_public_oss_on_cdn_500(storage):
     bucket_factory.assert_called_once_with(storage, False)
 
 
-def test_read_object_does_not_fallback_on_cdn_404(storage):
+def test_read_object_falls_back_to_public_oss_on_cdn_404(storage):
     request = httpx.Request("GET", "https://cdn.example.com/example-document.pdf")
     response = httpx.Response(404, request=request)
     http_client = MagicMock()
     http_client.get.return_value = response
-    bucket_factory = MagicMock()
+    bucket = MagicMock()
+    bucket.get_object.return_value.read.return_value = b"oss"
+    bucket_factory = MagicMock(return_value=bucket)
     reader = make_reader(
         storage,
         http_client=http_client,
         bucket_factory=bucket_factory,
     )
 
-    with pytest.raises(httpx.HTTPStatusError):
-        reader.read_object("fixtures/example-document.pdf")
-
-    bucket_factory.assert_not_called()
+    assert reader.read_object("fixtures/example-document.pdf") == b"oss"
+    bucket_factory.assert_called_once_with(storage, False)
 
 
 def test_read_object_falls_back_on_network_error(storage):
@@ -217,6 +217,37 @@ def test_read_object_to_file_is_atomic_and_falls_back(storage, tmp_path):
     )
     assert destination.read_bytes() == b"complete-from-oss"
     assert not list(tmp_path.glob(".example-document.pdf.*.download"))
+
+
+def test_read_object_to_file_falls_back_on_cdn_404(storage, tmp_path):
+    request = httpx.Request("GET", "https://cdn.example.com/example-document.pdf")
+    response = httpx.Response(404, request=request)
+    stream_context = MagicMock()
+    stream_context.__enter__.return_value = response
+    stream_context.__exit__.return_value = None
+    http_client = MagicMock()
+    http_client.stream.return_value = stream_context
+    bucket = MagicMock()
+
+    def get_object_to_file(key, filename):
+        Path(filename).write_bytes(b"complete-from-oss")
+
+    bucket.get_object_to_file.side_effect = get_object_to_file
+    bucket_factory = MagicMock(return_value=bucket)
+    reader = make_reader(
+        storage,
+        http_client=http_client,
+        bucket_factory=bucket_factory,
+    )
+    destination = tmp_path / "example-document.pdf"
+
+    assert (
+        reader.read_object_to_file("fixtures/example-document.pdf", destination)
+        == destination
+    )
+    assert destination.read_bytes() == b"complete-from-oss"
+    assert not list(tmp_path.glob(".example-document.pdf.*.download"))
+    bucket_factory.assert_called_once_with(storage, False)
 
 
 def test_unknown_storage_has_clear_error(storage):
